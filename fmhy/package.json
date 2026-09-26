@@ -1,0 +1,68 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "fmhy",
+  "title": "FMHY",
+  "description": "Browse and search the FMHY (FreeMediaHeckYeah) wiki. Data is fetched at runtime and cached locally.",
+  "icon": "extension_icon.png",
+  "author": "adienox",
+  "license": "MIT",
+  "categories": ["Media", "Web"],
+  "commands": [
+    {
+      "name": "browse",
+      "title": "Browse FMHY",
+      "subtitle": "FMHY",
+      "description": "Explore FMHY pages, categories and subcategories.",
+      "mode": "view"
+    },
+    {
+      "name": "search",
+      "title": "Search FMHY",
+      "subtitle": "FMHY",
+      "description": "Search every link and tool across the whole FMHY wiki.",
+      "mode": "view"
+    },
+    {
+      "name": "favorites",
+      "title": "FMHY Favorites",
+      "subtitle": "FMHY",
+      "description": "Your saved FMHY links and recently opened ones.",
+      "mode": "view"
+    },
+    {
+      "name": "refresh",
+      "title": "Refresh FMHY Data",
+      "subtitle": "FMHY",
+      "description": "Re-download the FMHY wiki and update the local cache.",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "cacheHours",
+      "title": "Cache Duration",
+      "description": "How long downloaded FMHY data is considered fresh before it is refreshed in the background.",
+      "type": "dropdown",
+      "required": false,
+      "default": "24",
+      "data": [
+        { "title": "6 hours", "value": "6" },
+        { "title": "24 hours", "value": "24" },
+        { "title": "3 days", "value": "72" },
+        { "title": "7 days", "value": "168" }
+      ]
+    }
+  ],
+  "dependencies": {
+    "@vicinae/api": "^0.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "19.1.17",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "build": "vici build",
+    "dev": "vici develop"
+  }
+}

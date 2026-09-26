@@ -1,0 +1,114 @@
+{
+  "$schema": "https://raw.githubusercontent.com/vicinaehq/vicinae/refs/heads/main/extra/schemas/extension.json",
+  "name": "org-todos",
+  "title": "Org Todos",
+  "description": "View, complete and create tasks stored in an Org-mode todos.org file",
+  "icon": "extension_icon.png",
+  "author": "adienox",
+  "categories": [
+    "Productivity"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "list-tasks",
+      "title": "Todos",
+      "subtitle": "Org",
+      "description": "Browse tasks from your todos.org file, change their state, or open them in your editor",
+      "mode": "view"
+    },
+    {
+      "name": "agenda",
+      "title": "Agenda",
+      "subtitle": "Org",
+      "description": "Day-by-day agenda across all your org files: overdue, today, this week",
+      "mode": "view"
+    },
+    {
+      "name": "add-task",
+      "title": "New Todo",
+      "subtitle": "Org",
+      "description": "Append a new task to your todos.org file",
+      "mode": "view"
+    },
+    {
+      "name": "quick-add",
+      "title": "Quick Add Todo",
+      "subtitle": "Org",
+      "description": "Add a task in one line, e.g. \"call supplier tomorrow p1 #work\"",
+      "mode": "no-view",
+      "arguments": [
+        {
+          "name": "text",
+          "placeholder": "buy resistors tomorrow p1 #hardware",
+          "type": "text",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "capture",
+      "title": "Capture from Clipboard",
+      "subtitle": "Org",
+      "description": "Create a task from the clipboard: first line is the title, the rest becomes notes",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "todosFile",
+      "title": "Todos File",
+      "description": "Main todos file (~ is expanded). New tasks are written here.",
+      "type": "textfield",
+      "required": false,
+      "default": "~/org/todos.org"
+    },
+    {
+      "name": "extraFiles",
+      "title": "Additional Files",
+      "description": "Comma-separated extra .org files or directories to read tasks from",
+      "type": "textfield",
+      "required": false
+    },
+    {
+      "name": "todoKeywords",
+      "title": "TODO Keywords",
+      "description": "Same format as #+TODO: \u2014 active states, a bar, then done states",
+      "type": "textfield",
+      "required": false,
+      "default": "TODO NEXT WAIT | DONE CANCELLED"
+    },
+    {
+      "name": "archiveFile",
+      "title": "Archive File",
+      "description": "Where 'Archive Task' moves subtrees (~ is expanded). Created if missing.",
+      "type": "textfield",
+      "required": false,
+      "default": "~/org/archive.org"
+    },
+    {
+      "name": "editorCommand",
+      "title": "Editor Command",
+      "description": "Shell command used by 'Open in Editor'. {file} and {line} are substituted.",
+      "type": "textfield",
+      "required": false,
+      "default": "emacsclient -c -n -a \"\" +{line} {file}"
+    }
+  ],
+  "dependencies": {
+    "@vicinae/api": "0.29.0",
+    "chrono-node": "^2.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "build": "vici build",
+    "dev": "vici develop",
+    "test": "tsx --test tests/parser.test.ts tests/files.test.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}
