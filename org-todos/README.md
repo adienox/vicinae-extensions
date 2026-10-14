@@ -110,9 +110,30 @@ interval).
 
 ## Search
 
-Free text matches title, state, tags, outline and priority. Tokens:
-`#work` filters by tag, `p1`…`p4` by priority, `is:done`, `is:open`,
-`is:overdue` by state.
+Tokens are separated by spaces; wrap multi-word phrases in quotes. Prefix any
+token with `!` to **exclude** matches. Free text matches title, state, tags,
+outline and priority.
+
+| Token | Matches |
+| --- | --- |
+| `#work` or `tag:work` | tasks tagged `work` |
+| `!#devops` | tasks **without** the `devops` tag |
+| `p1`…`p4` / `priority:2` | priority level (4 = none) |
+| `state:WAIT` | exact TODO state |
+| `project:home` | any parent headline containing “home” |
+| `file:work` | tasks whose file path contains “work” |
+| `is:open` / `is:done` / `is:overdue` | status |
+| `is:repeating` / `has:repeat` | has a repeater |
+| `has:clock` / `has:deadline` / `has:scheduled` | clock / planning stamps |
+| `has:tags` / `has:notes` / `has:checkboxes` / `has:id` | body / property features |
+| `due:overdue` `due:today` `due:tomorrow` `due:week` `due:future` `due:none` | deadline bucket |
+| `scheduled:today` … | scheduled bucket |
+| `"pay rent"` | free-text phrase |
+
+Examples: `is:open !#someday due:week`, `p1 project:work !is:clocked`.
+The **Search Syntax** action (`ctrl+/`) in the Todos command shows this cheat
+sheet, and a query that is only filters (no free text) won't offer to create a
+task.
 
 ## Keyboard shortcuts
 
@@ -127,6 +148,7 @@ Free text matches title, state, tags, outline and priority. Tokens:
 | ctrl+shift+a | Archive task |
 | ctrl+z | Undo |
 | ctrl+g | Cycle grouping: Priority → Date → Project → Flat |
+| ctrl+/ | Search syntax help (Todos) |
 | ctrl+d | Toggle details (Todos) |
 | ctrl+o | Open in editor |
 | ctrl+r | Reload |

@@ -3,6 +3,7 @@ import {
   ActionPanel,
   Clipboard,
   Color,
+  Detail,
   Icon,
   List,
   Toast,
@@ -31,7 +32,14 @@ import {
 } from "./lib/files";
 import { buildEditorCommand, deadlineStatus, parseYmd, replaceState, taskKey, ymd, type Task } from "./lib/org";
 import { describeParsed, parseQuickAdd } from "./lib/quick-add";
-import { priorityLevel, taskMatches, tokenize } from "./lib/search";
+import {
+  hasFreeText,
+  priorityLevel,
+  SEARCH_HELP_MD,
+  SEARCH_PLACEHOLDER,
+  taskMatches,
+  tokenize,
+} from "./lib/search";
 import { useOrgData, useRemembered } from "./lib/use-org";
 
 type Filter = "open" | "due" | "done" | "all";
@@ -434,8 +442,8 @@ export default function ListTasks() {
     [isDone, today],
   );
   const matches = useCallback(
-    (t: Task) => taskMatches(t, searchTokens, { isDone: isDone(t), overdue: overdue(t) }),
-    [searchTokens, isDone, overdue],
+    (t: Task) => taskMatches(t, searchTokens, { isDone: isDone(t), overdue: overdue(t), today }),
+    [searchTokens, isDone, overdue, today],
   );
 
   const open = tasks
@@ -455,7 +463,10 @@ export default function ListTasks() {
   const showDone = filter === "done" || filter === "all";
   const groups = showOpen ? buildGroups(open, grouping, today).filter((g) => g.tasks.length > 0) : [];
 
-  const parsed = searchText.trim() ? parseQuickAdd(searchText) : undefined;
+  // Only offer quick-add creation while there is free text to turn into a
+  // title; a pure filter query like `!#devops` is search-only.
+  const canCreate = hasFreeText(searchTokens);
+  const parsed = searchText.trim() && canCreate ? parseQuickAdd(searchText) : undefined;
 
   function onViewChange(value: string) {
     const [kind, val] = value.split(":") as [string, string];
@@ -581,6 +592,12 @@ export default function ListTasks() {
                 shortcut={{ modifiers: ["ctrl"], key: "n" }}
                 target={<TaskForm onCreated={() => reload(true)} initialTitle={searchText} registerUndo={pushUndo} />}
               />
+              <Action.Push
+                title="Search Syntax"
+                icon={Icon.QuestionMarkCircle}
+                shortcut={{ modifiers: ["ctrl"], key: "/" }}
+                target={<Detail markdown={SEARCH_HELP_MD} />}
+              />
               <Action title="Capture from Clipboard" icon={Icon.Paperclip} onAction={captureClipboard} />
               <ActionPanel.Submenu title="Group By" icon={Icon.Layers}>
                 {GROUPINGS.map((g) => (
@@ -619,7 +636,7 @@ export default function ListTasks() {
       filtering={false}
       searchText={searchText}
       onSearchTextChange={setSearchText}
-      searchBarPlaceholder="Search or quick-add: buy milk tomorrow p1 #home…"
+      searchBarPlaceholder={SEARCH_PLACEHOLDER}
       searchBarAccessory={
         <List.Dropdown tooltip="Filter & group" value={`f:${filter}`} onChange={onViewChange}>
           <List.Dropdown.Section title="Filter">

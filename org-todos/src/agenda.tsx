@@ -14,7 +14,7 @@ import TaskForm from "./components/task-form";
 import { LEVEL_COLOR, detailMarkdown, taskActionSections, type TaskHandlers } from "./components/task-actions";
 import { archiveTask, clockIn, clockOut, createFile, deleteTask, removeSubtreeByRaw, restoreTask, setTaskState, setTaskRepeater, toggleTaskCheckbox, updateTask } from "./lib/files";
 import { buildEditorCommand, deadlineStatus, daysUntil, parseYmd, replaceState, taskKey, ymd, type Task } from "./lib/org";
-import { priorityLevel, taskMatches, tokenize } from "./lib/search";
+import { priorityLevel, SEARCH_PLACEHOLDER, taskMatches, tokenize } from "./lib/search";
 import { useOrgData } from "./lib/use-org";
 import { shortDay } from "./components/task-actions";
 
@@ -291,7 +291,7 @@ export default function Agenda() {
     (t: Task) => {
       const d = earliest(t);
       const isOverdue = !isDone(t) && !!d && d.slice(0, 10) < today;
-      return taskMatches(t, searchTokens, { isDone: isDone(t), overdue: isOverdue });
+      return taskMatches(t, searchTokens, { isDone: isDone(t), overdue: isOverdue, today });
     },
     [searchTokens, isDone, today],
   );
@@ -418,7 +418,7 @@ export default function Agenda() {
       filtering={false}
       searchText={searchText}
       onSearchTextChange={setSearchText}
-      searchBarPlaceholder="Filter the agenda…"
+      searchBarPlaceholder={SEARCH_PLACEHOLDER}
       navigationTitle={`Agenda${total ? ` · ${plural(total)}` : ""}`}
     >
       {error ? (

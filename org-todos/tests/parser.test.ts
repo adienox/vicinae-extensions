@@ -32,7 +32,7 @@ import {
   type Task,
 } from "../src/lib/org";
 import { describeParsed, parseDatePhrase, parseQuickAdd } from "../src/lib/quick-add";
-import { priorityLevel, taskMatches } from "../src/lib/search";
+import { hasFreeText, priorityLevel, taskMatches, tokenize } from "../src/lib/search";
 
 const KW: Keywords = parseKeywords("TODO NEXT WAIT | DONE CANCELLED");
 
@@ -613,19 +613,116 @@ test("parseQuickAdd accepts trailing org offsets and aliases", () => {
 
 /* ------------------------------ search ----------------------------------- */
 
-test("taskMatches handles the token grammar", () => {
+const CTX = { isDone: false, overdue: true, today: "2026-09-21" };
+
+test("taskMatches handles the basic token grammar", () => {
   const t = mkTask({ raw: "* TODO Pay rent", state: "TODO", title: "Pay rent", tags: ["money"], priority: "A" });
-  const ctx = { isDone: false, overdue: true };
-  assert.ok(taskMatches(t, ["rent"], ctx));
-  assert.ok(taskMatches(t, ["#money"], ctx));
-  assert.ok(taskMatches(t, ["p1"], ctx));
-  assert.ok(taskMatches(t, ["is:overdue"], ctx));
-  assert.ok(taskMatches(t, ["is:open"], ctx));
-  assert.equal(taskMatches(t, ["#home"], ctx), false);
-  assert.equal(taskMatches(t, ["p2"], ctx), false);
-  assert.equal(taskMatches(t, ["is:done"], ctx), false);
-  assert.equal(taskMatches(t, ["nonexistent"], ctx), false);
-  assert.ok(taskMatches(t, [], ctx));
+  assert.ok(taskMatches(t, ["rent"], CTX));
+  assert.ok(taskMatches(t, ["#money"], CTX));
+  assert.ok(taskMatches(t, ["tag:money"], CTX));
+  assert.ok(taskMatches(t, ["p1"], CTX));
+  assert.ok(taskMatches(t, ["priority:1"], CTX));
+  assert.ok(taskMatches(t, ["is:overdue"], CTX));
+  assert.ok(taskMatches(t, ["is:open"], CTX));
+  assert.equal(taskMatches(t, ["#home"], CTX), false);
+  assert.equal(taskMatches(t, ["p2"], CTX), false);
+  assert.equal(taskMatches(t, ["is:done"], CTX), false);
+  assert.equal(taskMatches(t, ["nonexistent"], CTX), false);
+  assert.ok(taskMatches(t, [], CTX));
+});
+
+test("taskMatches negates any token with !", () => {
+  const t = mkTask({ raw: "* TODO Pay rent", state: "TODO", title: "Pay rent", tags: ["money"], priority: "A" });
+  assert.ok(taskMatches(t, ["!#devops"], CTX));
+  assert.equal(taskMatches(t, ["!#money"], CTX), false);
+  assert.ok(taskMatches(t, ["!p2"], CTX));
+  assert.equal(taskMatches(t, ["!p1"], CTX), false);
+  assert.ok(taskMatches(t, ["!is:done"], CTX));
+  assert.equal(taskMatches(t, ["!is:open"], CTX), false);
+  assert.equal(taskMatches(t, ["!rent"], CTX), false);
+  assert.ok(taskMatches(t, ["!milk"], CTX));
+});
+
+test("taskMatches filters by state, project and file", () => {
+  const t = mkTask({
+    raw: "* WAIT Pay rent",
+    state: "WAIT",
+    title: "Pay rent",
+    outline: ["Home", "Finance"],
+    file: "/org/work.org",
+  });
+  assert.ok(taskMatches(t, ["state:wait"], CTX));
+  assert.equal(taskMatches(t, ["state:todo"], CTX), false);
+  assert.ok(taskMatches(t, ["project:home"], CTX));
+  assert.equal(taskMatches(t, ["project:work"], CTX), false);
+  assert.ok(taskMatches(t, ["file:work.org"], CTX));
+  assert.equal(taskMatches(t, ["file:personal"], CTX), false);
+});
+
+test("taskMatches understands is:/has: feature predicates", () => {
+  const t = mkTask({
+    raw: "* TODO Pay rent",
+    state: "TODO",
+    title: "Pay rent",
+    tags: ["money"],
+    repeat: "+1w",
+    clockIn: "2026-09-21 09:00",
+    deadline: "2026-09-25",
+    scheduled: "2026-09-22",
+    body: "notes here",
+    checkboxItems: [{ line: 0, checked: false, text: "x" }],
+    orgId: "abc",
+  });
+  for (const q of [
+    "is:repeating",
+    "has:repeat",
+    "has:clock",
+    "is:clocked",
+    "has:deadline",
+    "has:scheduled",
+    "has:date",
+    "has:tags",
+    "has:notes",
+    "has:checkboxes",
+    "has:id",
+  ]) {
+    assert.ok(taskMatches(t, [q], CTX), q);
+  }
+  const plain = mkTask({ raw: "* TODO X", state: "TODO", title: "X" });
+  assert.equal(taskMatches(plain, ["has:repeat"], CTX), false);
+  assert.ok(taskMatches(plain, ["!has:repeat"], CTX));
+});
+
+test("taskMatches buckets due: and scheduled: dates", () => {
+  const overdue = mkTask({ raw: "* TODO A", state: "TODO", title: "A", deadline: "2026-09-20" });
+  const today = mkTask({ raw: "* TODO B", state: "TODO", title: "B", deadline: "2026-09-21" });
+  const tomorrow = mkTask({ raw: "* TODO C", state: "TODO", title: "C", deadline: "2026-09-22" });
+  const week = mkTask({ raw: "* TODO D", state: "TODO", title: "D", scheduled: "2026-09-27" });
+  const later = mkTask({ raw: "* TODO E", state: "TODO", title: "E", scheduled: "2026-10-10" });
+  const none = mkTask({ raw: "* TODO F", state: "TODO", title: "F" });
+
+  assert.ok(taskMatches(overdue, ["due:overdue"], CTX));
+  assert.ok(taskMatches(today, ["due:today"], CTX));
+  assert.ok(taskMatches(tomorrow, ["due:tomorrow"], CTX));
+  assert.ok(taskMatches(week, ["scheduled:week"], CTX));
+  assert.ok(taskMatches(later, ["scheduled:future"], CTX));
+  assert.ok(taskMatches(none, ["due:none"], CTX));
+  assert.equal(taskMatches(later, ["due:any"], CTX), false);
+  assert.equal(taskMatches(week, ["due:any"], CTX), false);
+  assert.ok(taskMatches(overdue, ["scheduled:none"], CTX));
+});
+
+test("tokenize keeps quoted phrases and negation", () => {
+  assert.deepEqual(tokenize('is:open "pay rent" !#devops'), ["is:open", "pay rent", "!#devops"]);
+  assert.deepEqual(tokenize(""), []);
+  assert.deepEqual(tokenize("  #work   p1 "), ["#work", "p1"]);
+});
+
+test("hasFreeText distinguishes filters from quick-add text", () => {
+  assert.equal(hasFreeText(tokenize("!#devops is:open")), false);
+  assert.equal(hasFreeText(tokenize("p1 #work")), false);
+  assert.equal(hasFreeText(tokenize("buy milk")), true);
+  assert.equal(hasFreeText(tokenize("buy milk #home")), true);
 });
 
 test("priorityLevel maps cookies", () => {
