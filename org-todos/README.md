@@ -21,6 +21,8 @@ npm run build   # installs into ~/.local/share/vicinae/extensions/org-todos
   live preview; explicit fields win over the title. `ctrl+enter` creates and
   keeps the form open.
 - **Quick Add Todo** – one-liner, e.g. `call supplier tomorrow p1 #work`.
+  Can also be set as a Vicinae **fallback command**: the root search text is
+  used as the task when the command is invoked without an argument.
 - **Capture from Clipboard** – first clipboard line becomes the title
   (quick-add syntax applies), the rest becomes the body.
 

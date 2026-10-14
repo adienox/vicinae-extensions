@@ -4,7 +4,9 @@ import { appendTask } from "./lib/files";
 import { describeParsed, parseQuickAdd } from "./lib/quick-add";
 
 export default async function QuickAdd(props: LaunchProps<{ arguments: Arguments.QuickAdd }>) {
-  const input = props.arguments.text?.trim();
+  // When launched as a fallback command, Vicinae passes the root search text in
+  // `fallbackText` instead of populating the command's declared arguments.
+  const input = (props.arguments?.text ?? props.fallbackText)?.trim();
   if (!input) {
     await showToast({ style: Toast.Style.Failure, title: "Type a task first" });
     return;
