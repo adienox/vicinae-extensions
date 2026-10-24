@@ -181,22 +181,34 @@ export default function ListTasks() {
 
     try {
       const res = await setTaskState(task, state, keywords);
+      const updated = { ...task, state: res.state, raw: replaceState(task.raw, res.state) };
+
+      // Finishing a clocked-in task also stops its clock.
+      let clockedOut = false;
+      if (finishing && task.clockIn) {
+        try {
+          await clockOut(updated, config);
+          clockedOut = true;
+        } catch (e) {
+          await fail("Task updated, but could not clock out", e);
+        }
+      }
+
       if (res.repeated) {
         clearUndo();
         await showToast({
           style: Toast.Style.Success,
           title: "Rescheduled",
-          message: `${task.title} → ${stampLabel(res.next ?? "", today)}`,
+          message: `${task.title} → ${stampLabel(res.next ?? "", today)}${clockedOut ? " · clocked out" : ""}`,
         });
       } else {
-        const updated = { ...task, state: res.state, raw: replaceState(task.raw, res.state) };
         pushUndo(`Undo ${res.state}`, async () => {
           await setTaskState(updated, task.state, keywords);
         });
         await showToast({
           style: Toast.Style.Success,
           title: `${res.state} · ctrl+z to undo`,
-          message: task.title,
+          message: clockedOut ? `${task.title} · clocked out` : task.title,
         });
       }
     } catch (e) {

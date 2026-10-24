@@ -85,7 +85,7 @@ and the detail view explains the warning period.
   (clocking in elsewhere clocks the previous task out). If no Emacs server is
   reachable, the extension falls back to writing org-format `CLOCK:` entries
   into the task's `:LOGBOOK:` directly. Accumulated time shows in the detail
-  view.
+  view. Marking a clocked-in task done also clocks it out.
 - **Subtasks** – `- [ ]` items in the body show an `x/y` accessory. Pressing
   Enter on such a task opens it in Emacs (where you tick them off); tasks
   without subtasks keep Enter for mark done / reopen.
