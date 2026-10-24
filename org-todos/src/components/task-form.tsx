@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { dateFromText, DateField } from "./date-field";
 import { getConfig } from "../lib/config";
 import { appendTask, expandSources, removeSubtreeByRaw } from "../lib/files";
+import { parseEffort } from "../lib/org";
 import { describeParsed, parseQuickAdd } from "../lib/quick-add";
 
 interface Props {
@@ -26,6 +27,7 @@ export default function TaskForm({ onCreated, standalone, initialTitle, register
   const [state, setState] = useState(keywords.active[0]);
   const [priority, setPriority] = useState("none");
   const [tags, setTags] = useState("");
+  const [effort, setEffort] = useState("");
   const [schedText, setSchedText] = useState("");
   const [deadText, setDeadText] = useState("");
   const [notes, setNotes] = useState("");
@@ -46,6 +48,7 @@ export default function TaskForm({ onCreated, standalone, initialTitle, register
     setState(keywords.active[0]);
     setPriority("none");
     setTags("");
+    setEffort("");
     setSchedText("");
     setDeadText("");
     setNotes("");
@@ -68,11 +71,23 @@ export default function TaskForm({ onCreated, standalone, initialTitle, register
       return;
     }
 
+    const effortText = effort.trim();
+    const effortMinutes = effortText ? parseEffort(effortText) : undefined;
+    if (effortText && effortMinutes === undefined) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Effort not understood",
+        message: "Try: 30, 1:30, 1h 30min, 2d",
+      });
+      return;
+    }
+
     const formTags = tags.split(/[,\s]+/).filter(Boolean);
     const finalTags = [...new Set([...formTags, ...parsed.tags])];
     const finalPriority = priority !== "none" ? priority : parsed.priority;
     const finalScheduled = sched ?? parsed.scheduled;
     const finalDeadline = dead ?? parsed.deadline;
+    const finalEffort = effortMinutes ?? parsed.effort;
 
     try {
       const placed = await appendTask(target, {
@@ -82,6 +97,7 @@ export default function TaskForm({ onCreated, standalone, initialTitle, register
         tags: finalTags,
         scheduled: finalScheduled ?? undefined,
         deadline: finalDeadline ?? undefined,
+        effort: finalEffort,
         notes,
       });
       registerUndo?.("Remove created task", async () => {
@@ -145,6 +161,7 @@ export default function TaskForm({ onCreated, standalone, initialTitle, register
         <Form.Dropdown.Item value="C" title="C (low)" />
       </Form.Dropdown>
       <Form.TextField id="tags" title="Tags" placeholder="work, uni, emacs" value={tags} onChange={setTags} />
+      <Form.TextField id="effort" title="Effort" placeholder="30, 1:30, 1h 30min" value={effort} onChange={setEffort} />
       <Form.Separator />
       <DateField id="scheduled" title="Scheduled" value={schedText} onChange={setSchedText} />
       <DateField id="deadline" title="Deadline" value={deadText} onChange={setDeadText} />

@@ -40,6 +40,8 @@ export interface Task {
   outline: string[];
   /** :ID: property, used for org-id links */
   orgId?: string;
+  /** :Effort: property, exactly as written in the file (e.g. "20" or "1:30") */
+  effort?: string;
   /** [x/y] or [x%] statistics cookie found in the headline */
   cookie?: { done: number; total: number; percent: boolean };
   /** Checkbox items in the body (line = index within the body region) */
@@ -57,6 +59,8 @@ export interface NewTask {
   tags: string[];
   scheduled?: Date;
   deadline?: Date;
+  /** Effort in minutes, written as the :Effort: property */
+  effort?: number;
   notes?: string;
 }
 
@@ -68,6 +72,8 @@ export interface TaskPatch {
   scheduled?: Date | null;
   deadline?: Date | null;
   body?: string;
+  /** Effort in minutes; null clears the :Effort: property */
+  effort?: number | null;
 }
 
 export interface StateResult {
@@ -227,6 +233,40 @@ export function warningToDays(token: string): number | undefined {
   return n * mult;
 }
 
+/**
+ * Parse an Org effort value into whole minutes. Accepts plain minutes ("20"),
+ * H:MM ("1:30") and Org duration tokens ("1h 30min", "2d", "1.5h"). Bare
+ * "m" is deliberately rejected: in Org it means *months*, not minutes.
+ */
+export function parseEffort(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const s = raw.trim().toLowerCase();
+  if (!s) return undefined;
+  if (/^\d+$/.test(s)) return Number(s);
+  if (/^\d+:\d{1,2}$/.test(s)) {
+    const [h, m] = s.split(":").map(Number);
+    return h * 60 + m;
+  }
+  const re = /(\d+(?:\.\d+)?)\s*(min|h|d|w|y)/g;
+  const mult = { min: 1, h: 60, d: 1440, w: 10080, y: 525600 } as const;
+  let total = 0;
+  let consumed = "";
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) {
+    consumed += m[0];
+    total += Number(m[1]) * mult[m[2] as keyof typeof mult];
+  }
+  if (!consumed || consumed.replace(/\s+/g, "") !== s.replace(/\s+/g, "")) return undefined;
+  return Math.round(total);
+}
+
+/** Canonical Org effort string (H:MM) for a number of minutes. */
+export function formatEffort(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
 /** Whole days from today until a stamp's date (negative when past). */
 export function daysUntil(stamp: string, today: string): number {
   return Math.round((parseYmd(stamp).getTime() - parseYmd(today).getTime()) / 86400000);
@@ -342,6 +382,22 @@ export function setProperty(lines: string[], idx: number, level: number, key: st
   } else {
     lines.splice(start, 0, `${indent}:PROPERTIES:`, `${indent}:${key}: ${value}`, `${indent}:END:`);
   }
+}
+
+/** Remove a property, dropping the PROPERTIES drawer if it becomes empty. */
+export function removeProperty(lines: string[], idx: number, level: number, key: string): void {
+  let start = idx + 1;
+  if (PLANNING_RE.test(lines[start] ?? "")) start++;
+  if ((lines[start] ?? "").trim() !== ":PROPERTIES:") return;
+  let end = start + 1;
+  while (end < lines.length && lines[end].trim() !== ":END:") end++;
+  const re = new RegExp(`^\\s*:${key}\\s*:`, "i");
+  const at = lines.findIndex((l, i) => i > start && i < end && re.test(l));
+  if (at < 0) return;
+  lines.splice(at, 1);
+  let e = start + 1;
+  while (e < lines.length && lines[e].trim() !== ":END:") e++;
+  if (e === start + 1) lines.splice(start, 2);
 }
 
 const cleanTag = (t: string) =>
@@ -482,6 +538,9 @@ export function parseOrg(text: string, pref: Keywords, file: string): Task[] {
     // :ID: lives in the PROPERTIES drawer, which is above the body region
     const section = lines.slice(i + 1, end).join("\n");
     const orgId = /^\s*:ID:\s*(.+?)\s*$/m.exec(section)?.[1];
+    // Scope :Effort: to this task's own drawer (not a child's).
+    const properties = lines.slice(i + 1, start).join("\n");
+    const effort = /^\s*:Effort:\s*(.+?)\s*$/im.exec(properties)?.[1];
 
     const cookieMatch = /\[(\d+)\/(\d+)\]|\[(\d+)%\]/.exec(m[2]);
     const cookie = cookieMatch
@@ -498,20 +557,19 @@ export function parseOrg(text: string, pref: Keywords, file: string): Task[] {
 
     let clockIn: string | undefined;
     let clockedMinutes: number | undefined;
-    const logbook = /(?:^|\n)\s*:LOGBOOK:\n([\s\S]*?)\n\s*:END:/.exec(rawBody)?.[1];
-    if (logbook) {
-      let total = 0;
-      for (const line of logbook.split("\n")) {
-        const closed = /CLOCK:\s*[<[][^>\]]*[>\]]\s*--\s*[<[][^>\]]*[>\]]\s*=>\s*(\d+):(\d+)/.exec(line);
-        if (closed) {
-          total += Number(closed[1]) * 60 + Number(closed[2]);
-          continue;
-        }
-        const open = /^\s*CLOCK:\s*([<[][^>\]]*[>\]])\s*$/.exec(line);
-        if (open) clockIn = stampDisplay(open[1]);
+    // Scan the whole body, not just a :LOGBOOK: drawer: Emacs can be
+    // configured (org-clock-into-drawer) to write bare CLOCK: lines.
+    let total = 0;
+    for (const line of rawBody.split("\n")) {
+      const closed = /CLOCK:\s*[<[][^>\]]*[>\]]\s*--\s*[<[][^>\]]*[>\]]\s*=>\s*(\d+):(\d+)/.exec(line);
+      if (closed) {
+        total += Number(closed[1]) * 60 + Number(closed[2]);
+        continue;
       }
-      if (total) clockedMinutes = total;
+      const open = /^\s*CLOCK:\s*([<[][^>\]]*[>\]])\s*$/.exec(line);
+      if (open) clockIn = stampDisplay(open[1]);
     }
+    if (total) clockedMinutes = total;
 
     tasks.push({
       file,
@@ -531,6 +589,7 @@ export function parseOrg(text: string, pref: Keywords, file: string): Task[] {
       body,
       outline,
       orgId,
+      ...(effort ? { effort } : {}),
       cookie,
       ...(checkboxItems.length ? { checkboxItems } : {}),
       ...(clockIn ? { clockIn } : {}),
@@ -640,6 +699,11 @@ export function applyTaskPatch(lines: string[], idx: number, task: Task, patch: 
   }
   if (Object.keys(change).length) updatePlanning(lines, idx, task.level, change);
 
+  if (patch.effort !== undefined) {
+    if (patch.effort === null) removeProperty(lines, idx, task.level, "Effort");
+    else setProperty(lines, idx, task.level, "Effort", formatEffort(patch.effort));
+  }
+
   if (patch.body !== undefined) {
     const start = bodyStart(lines, idx);
     let end = start;
@@ -670,6 +734,10 @@ export function buildAppendBlock(t: NewTask, level: number): string[] {
     );
   }
   if (planning.length) out.push(" ".repeat(level + 1) + planning.join(" "));
+  if (t.effort !== undefined) {
+    const indent = " ".repeat(level + 1);
+    out.push(`${indent}:PROPERTIES:`, `${indent}:Effort: ${formatEffort(t.effort)}`, `${indent}:END:`);
+  }
   if (t.notes?.trim()) {
     for (const l of t.notes.trim().split("\n")) out.push(l.trim() ? `  ${l}` : "");
   }

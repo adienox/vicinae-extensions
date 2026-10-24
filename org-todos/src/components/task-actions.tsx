@@ -1,11 +1,10 @@
 /*
- * Action sections and detail markdown shared by the Todos list and the
- * Agenda view, so both surfaces behave identically.
+ * Action sections and detail markdown for the Todos list.
  */
 
 import { Action, ActionPanel, Color, Icon } from "@vicinae/api";
 import type { ReactNode } from "react";
-import { parseYmd, ymd, deadlineStatus, type Keywords, type Task } from "../lib/org";
+import { parseYmd, ymd, deadlineStatus, formatEffort, parseEffort, type Keywords, type Task } from "../lib/org";
 import { priorityLevel } from "../lib/search";
 
 export interface TaskHandlers {
@@ -25,7 +24,8 @@ export interface TaskHandlers {
   toggleTag(t: Task, tag: string): void;
   clockIn(t: Task): void;
   clockOut(t: Task): void;
-  toggleCheckbox(t: Task, index: number): void;
+  changeEffort(t: Task, minutes: number | null): void;
+  effortTarget(t: Task): ReactNode;
 }
 
 export const LEVEL_COLOR: Record<number, Color> = {
@@ -36,6 +36,8 @@ export const LEVEL_COLOR: Record<number, Color> = {
 };
 
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+const EFFORT_PRESETS = [15, 30, 45, 60, 90, 120, 240];
 
 export const shortDay = (d: Date) =>
   d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -72,21 +74,60 @@ function dateSubmenu(task: Task, kind: "scheduled" | "deadline", h: TaskHandlers
   );
 }
 
+function effortSubmenu(task: Task, h: TaskHandlers): ReactNode {
+  return (
+    <ActionPanel.Submenu
+      title={task.effort ? `Effort (${formatEffort(parseEffort(task.effort) ?? 0)})` : "Effort"}
+      icon={Icon.Stopwatch}
+      shortcut={{ modifiers: ["ctrl", "shift"], key: "e" }}
+    >
+      {EFFORT_PRESETS.map((m) => (
+        <Action key={m} title={formatEffort(m)} icon={Icon.Stopwatch} onAction={() => h.changeEffort(task, m)} />
+      ))}
+      <Action.Push title="Pick Effort…" icon={Icon.Pencil} target={h.effortTarget(task)} />
+      {task.effort && (
+        <Action title="Clear" icon={Icon.XMarkCircle} onAction={() => h.changeEffort(task, null)} />
+      )}
+    </ActionPanel.Submenu>
+  );
+}
+
 export function taskActionSections(task: Task, h: TaskHandlers): ReactNode {
   const finished = h.keywords.done.includes(task.state);
   const primary = finished ? h.keywords.active[0] : h.keywords.done[0];
   const vocab = [...new Set([...h.tagVocabulary, ...task.tags])].sort((a, b) => a.localeCompare(b));
-  const boxes = task.checkboxItems ?? [];
-  const boxesDone = boxes.filter((b) => b.checked).length;
+  const hasSubtasks = !!task.checkboxItems?.length;
+  const openInEditor = (
+    <Action
+      title="Open in Editor"
+      icon={Icon.BlankDocument}
+      shortcut={{ modifiers: ["ctrl"], key: "o" }}
+      onAction={() => h.openInEditor(task)}
+    />
+  );
+  const stateAction = (
+    <Action
+      title={finished ? `Reopen (${h.keywords.active[0]})` : `Mark ${h.keywords.done[0]}`}
+      icon={finished ? Icon.Circle : Icon.CheckCircle}
+      onAction={() => h.changeState(task, primary)}
+    />
+  );
 
   return (
     <>
       <ActionPanel.Section>
-        <Action
-          title={finished ? `Reopen (${h.keywords.active[0]})` : `Mark ${h.keywords.done[0]}`}
-          icon={finished ? Icon.Circle : Icon.CheckCircle}
-          onAction={() => h.changeState(task, primary)}
-        />
+        {/* Tasks with `- [ ]` subtasks open in Emacs; regular tasks mark done. */}
+        {hasSubtasks ? (
+          <>
+            {openInEditor}
+            {stateAction}
+          </>
+        ) : (
+          <>
+            {stateAction}
+            {openInEditor}
+          </>
+        )}
         {/* Every configured state, one action each — right there in the
             action panel (ctrl+b), no submenu digging. */}
         {h.keywords.all
@@ -111,12 +152,6 @@ export function taskActionSections(task: Task, h: TaskHandlers): ReactNode {
           shortcut={{ modifiers: ["ctrl"], key: "e" }}
           target={h.editTarget(task)}
         />
-        <Action
-          title="Open in Editor"
-          icon={Icon.BlankDocument}
-          shortcut={{ modifiers: ["ctrl"], key: "o" }}
-          onAction={() => h.openInEditor(task)}
-        />
       </ActionPanel.Section>
 
       <ActionPanel.Section title="Change">
@@ -131,6 +166,7 @@ export function taskActionSections(task: Task, h: TaskHandlers): ReactNode {
         ))}
         {dateSubmenu(task, "scheduled", h)}
         {dateSubmenu(task, "deadline", h)}
+        {effortSubmenu(task, h)}
         <ActionPanel.Submenu title="Tags" icon={Icon.Tag}>
           {vocab.map((tag) => (
             <Action
@@ -141,26 +177,24 @@ export function taskActionSections(task: Task, h: TaskHandlers): ReactNode {
             />
           ))}
         </ActionPanel.Submenu>
-        {boxes.length > 0 && (
-          <ActionPanel.Submenu title={`Checkboxes (${boxesDone}/${boxes.length})`} icon={Icon.Checkmark}>
-            {boxes.map((cb, i) => (
-              <Action
-                key={i}
-                title={`${cb.checked ? "[x]" : "[ ]"} ${cb.text}`}
-                icon={cb.checked ? Icon.Checkmark : Icon.Circle}
-                onAction={() => h.toggleCheckbox(task, i)}
-              />
-            ))}
-          </ActionPanel.Submenu>
-        )}
       </ActionPanel.Section>
 
       <ActionPanel.Section title="Task">
         <Action.Push title="Refile…" icon={Icon.Folder} target={h.refileTarget(task)} />
         {task.clockIn ? (
-          <Action title="Clock Out" icon={Icon.Clock} onAction={() => h.clockOut(task)} />
+          <Action
+            title="Clock Out"
+            icon={Icon.Clock}
+            shortcut={{ modifiers: ["ctrl", "shift"], key: "c" }}
+            onAction={() => h.clockOut(task)}
+          />
         ) : (
-          <Action title="Clock In" icon={Icon.Clock} onAction={() => h.clockIn(task)} />
+          <Action
+            title="Clock In"
+            icon={Icon.Clock}
+            shortcut={{ modifiers: ["ctrl", "shift"], key: "c" }}
+            onAction={() => h.clockIn(task)}
+          />
         )}
         {task.orgId && (
           <Action.CopyToClipboard
@@ -201,6 +235,18 @@ const relDate = (s: string, today: string) =>
 const fmtClock = (minutes: number) =>
   `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`;
 
+/** Elapsed time since an open clock stamp ("YYYY-MM-DD HH:MM"), as H:MM. */
+export function clockElapsed(clockIn: string, now = new Date()): string {
+  const [day, time] = clockIn.split(" ");
+  const [y, mo, d] = day.split("-").map(Number);
+  const [h, mi] = (time ?? "00:00").split(":").map(Number);
+  const mins = Math.max(
+    0,
+    Math.floor((now.getTime() - new Date(y, mo - 1, d, h, mi).getTime()) / 60000),
+  );
+  return fmtClock(mins);
+}
+
 export function detailMarkdown(
   task: Task,
   keywords: Keywords,
@@ -236,7 +282,11 @@ export function detailMarkdown(
     lines.push(`Deadline: ${relDate(task.deadline, today)}${note}`);
   }
   if (task.closed) lines.push(`Closed: ${relDate(task.closed, today)}`);
-  if (task.clockIn) lines.push(`Clock: running since ${task.clockIn}`);
+  if (task.effort) {
+    const mins = parseEffort(task.effort);
+    lines.push(`Effort: ${mins !== undefined ? formatEffort(mins) : task.effort}`);
+  }
+  if (task.clockIn) lines.push(`Clock: running ${clockElapsed(task.clockIn)} (since ${task.clockIn.slice(11)})`);
   if (task.clockedMinutes !== undefined) lines.push(`Clocked total: ${fmtClock(task.clockedMinutes)}`);
   if (multiFile) lines.push(`File: \`${basename(task.file)}\``);
   if (task.body) lines.push("---", "", task.body);

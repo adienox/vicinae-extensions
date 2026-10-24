@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { dateFromText, DateField, datePresetList } from "./date-field";
 import { getConfig } from "../lib/config";
 import { setTaskRepeater, setTaskState, updateTask } from "../lib/files";
-import { parseYmd, replaceState, type Task, type TaskPatch } from "../lib/org";
+import { formatEffort, parseEffort, parseYmd, replaceState, type Task, type TaskPatch } from "../lib/org";
 
 interface EditProps {
   task: Task;
@@ -31,6 +31,7 @@ export function EditForm({ task, onSaved, registerUndo }: EditProps) {
   const [schedText, setSchedText] = useState(task.scheduled ? task.scheduled.slice(0, 10) : "");
   const [deadText, setDeadText] = useState(task.deadline ? task.deadline.slice(0, 10) : "");
   const [repeat, setRepeat] = useState(task.repeat ?? "");
+  const [effort, setEffort] = useState(task.effort ?? "");
   const [body, setBody] = useState(task.body);
 
   async function submit() {
@@ -59,6 +60,18 @@ export function EditForm({ task, onSaved, registerUndo }: EditProps) {
       return;
     }
 
+    const effortText = effort.trim();
+    const effortMinutes = effortText ? parseEffort(effortText) : undefined;
+    if (effortText && effortMinutes === undefined) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Effort not understood",
+        message: "Try: 30, 1:30, 1h 30min, 2d",
+      });
+      return;
+    }
+    const currentEffort = parseEffort(task.effort);
+
     try {
       let current = task;
 
@@ -75,6 +88,7 @@ export function EditForm({ task, onSaved, registerUndo }: EditProps) {
       if (newTags.join(":") !== task.tags.join(":")) patch.tags = newTags;
       if (!sameDay(sched, task.scheduled)) patch.scheduled = sched;
       if (!sameDay(dead, task.deadline)) patch.deadline = dead;
+      if (effortMinutes !== currentEffort) patch.effort = effortMinutes ?? null;
       if (body.trim() !== task.body) patch.body = body;
 
       const postRaw = Object.keys(patch).length ? await updateTask(current, patch) : current.raw;
@@ -105,6 +119,7 @@ export function EditForm({ task, onSaved, registerUndo }: EditProps) {
         if (patch.tags !== undefined) revert.tags = task.tags;
         if (patch.scheduled !== undefined) revert.scheduled = task.scheduled ? parseYmd(task.scheduled) : null;
         if (patch.deadline !== undefined) revert.deadline = task.deadline ? parseYmd(task.deadline) : null;
+        if (patch.effort !== undefined) revert.effort = currentEffort ?? null;
         if (patch.body !== undefined) revert.body = task.body;
         if (Object.keys(revert).length) await updateTask(t, revert);
         if (repeatChanged) {
@@ -156,6 +171,13 @@ export function EditForm({ task, onSaved, registerUndo }: EditProps) {
         value={repeat}
         onChange={setRepeat}
         placeholder="+1w, ++1w, .+1d"
+      />
+      <Form.TextField
+        id="effort"
+        title="Effort"
+        value={effort}
+        onChange={setEffort}
+        placeholder="30, 1:30, 1h 30min"
       />
       <Form.Separator />
       <Form.TextArea id="body" title="Notes" value={body} onChange={setBody} placeholder="Optional body text" />
@@ -232,6 +254,87 @@ export function DateForm({ task, kind, onSaved, registerUndo }: DateProps) {
       }
     >
       <DateField id="date" title={label} value={text} onChange={setText} existing={existing} />
+    </Form>
+  );
+}
+
+const EFFORT_PRESETS = [15, 30, 45, 60, 90, 120, 240];
+
+interface EffortProps {
+  task: Task;
+  onSaved: () => void;
+  registerUndo?: (label: string, revert: () => Promise<void>) => void;
+}
+
+export function EffortForm({ task, onSaved, registerUndo }: EffortProps) {
+  const { pop } = useNavigation();
+  const [text, setText] = useState(task.effort ?? "");
+
+  async function apply(minutes: number | null) {
+    const old = task.effort;
+    try {
+      const raw = await updateTask(task, { effort: minutes });
+      registerUndo?.(minutes === null ? "Restore effort" : "Undo effort change", async () => {
+        await updateTask({ ...task, raw }, { effort: old ? parseEffort(old) ?? null : null });
+      });
+      await showToast({
+        style: Toast.Style.Success,
+        title: minutes === null ? "Effort cleared" : `Effort ${formatEffort(minutes)}`,
+        message: task.title,
+      });
+      onSaved();
+      pop();
+    } catch (e) {
+      await showToast({ style: Toast.Style.Failure, title: "Could not update task", message: String(e) });
+    }
+  }
+
+  async function submit() {
+    const t = text.trim();
+    if (!t) {
+      await apply(null);
+      return;
+    }
+    const minutes = parseEffort(t);
+    if (minutes === undefined) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Effort not understood",
+        message: "Try: 30, 1:30, 1h 30min, 2d",
+      });
+      return;
+    }
+    await apply(minutes);
+  }
+
+  return (
+    <Form
+      navigationTitle="Effort"
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm title="Set Effort" onSubmit={submit} />
+          {EFFORT_PRESETS.map((m) => (
+            <Action key={m} title={formatEffort(m)} icon={Icon.Stopwatch} onAction={() => apply(m)} />
+          ))}
+          {task.effort && (
+            <Action
+              title="Clear Effort"
+              icon={Icon.Trash}
+              style="destructive"
+              onAction={() => apply(null)}
+            />
+          )}
+        </ActionPanel>
+      }
+    >
+      <Form.TextField
+        id="effort"
+        title="Effort"
+        value={text}
+        onChange={setText}
+        placeholder="30, 1:30, 1h 30min"
+        autoFocus
+      />
     </Form>
   );
 }

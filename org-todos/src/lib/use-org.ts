@@ -1,5 +1,5 @@
 /*
- * Shared data layer for the Todos and Agenda views: loading, live reload,
+ * Shared data layer for the Todos view: loading, live reload,
  * undo stack, and remembered settings.
  */
 

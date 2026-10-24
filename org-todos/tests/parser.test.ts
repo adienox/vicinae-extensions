@@ -17,9 +17,11 @@ import {
   fileKeywords,
   findInsertionPoint,
   findSubtreeRange,
+  formatEffort,
   formatHeadline,
   formatStamp,
   listProjects,
+  parseEffort,
   parseKeywords,
   parseOrg,
   parseStamp,
@@ -238,6 +240,12 @@ test("parseOrg reads :ID:, statistics cookies and checkboxes", () => {
   assert.equal(t.checkboxItems?.[1].text, "shoes");
 });
 
+test("parseOrg reads the :Effort: property", () => {
+  const text = "* TODO Write report\n:PROPERTIES:\n:Effort: 1:30\n:END:\nbody\n";
+  const [t] = parseOrg(text, KW, "t.org");
+  assert.equal(t.effort, "1:30");
+});
+
 test("parseOrg reads percent cookies", () => {
   const text = "* TODO Progress [33%]\nbody\n";
   const [t] = parseOrg(text, KW, "t.org");
@@ -281,12 +289,40 @@ test("daysUntil counts calendar days", () => {
   assert.equal(daysUntil("2026-09-19", "2026-09-21"), -2);
 });
 
+test("parseEffort understands org effort formats", () => {
+  assert.equal(parseEffort("20"), 20);
+  assert.equal(parseEffort("0:20"), 20);
+  assert.equal(parseEffort("1:30"), 90);
+  assert.equal(parseEffort("1h 30min"), 90);
+  assert.equal(parseEffort("1.5h"), 90);
+  assert.equal(parseEffort("2d"), 2880);
+  assert.equal(parseEffort("90m"), undefined); // "m" means months in Org
+  assert.equal(parseEffort("nonsense"), undefined);
+  assert.equal(parseEffort(undefined), undefined);
+});
+
+test("formatEffort writes canonical H:MM", () => {
+  assert.equal(formatEffort(20), "0:20");
+  assert.equal(formatEffort(90), "1:30");
+  assert.equal(formatEffort(120), "2:00");
+});
+
 test("parseOrg detects open clocks and clocked totals", () => {
   const text = `* TODO Deep work
 :LOGBOOK:
 CLOCK: [2026-09-20 Sun 10:00]--[2026-09-20 Sun 12:30] =>  2:30
 CLOCK: [2026-09-21 Mon 22:00]
 :END:
+`;
+  const [t] = parseOrg(text, KW, "t.org");
+  assert.equal(t.clockIn, "2026-09-21 22:00");
+  assert.equal(t.clockedMinutes, 150);
+});
+
+test("parseOrg detects clocks written without a LOGBOOK drawer", () => {
+  const text = `* TODO Deep work
+CLOCK: [2026-09-20 Sun 10:00]--[2026-09-20 Sun 12:30] =>  2:30
+CLOCK: [2026-09-21 Mon 22:00]
 `;
   const [t] = parseOrg(text, KW, "t.org");
   assert.equal(t.clockIn, "2026-09-21 22:00");
@@ -406,6 +442,22 @@ test("applyTaskPatch replaces the body, keeping planning and properties", () => 
   ]);
 });
 
+test("applyTaskPatch sets and clears the :Effort: property", () => {
+  const lines = ["* TODO Task"];
+  const task = mkTask({ raw: lines[0], state: "TODO", title: "Task" });
+  applyTaskPatch(lines, 0, task, { effort: 90 });
+  assert.deepEqual(lines, ["* TODO Task", "  :PROPERTIES:", "  :Effort: 1:30", "  :END:"]);
+  applyTaskPatch(lines, 0, task, { effort: null });
+  assert.deepEqual(lines, ["* TODO Task"]);
+});
+
+test("applyTaskPatch keeps other properties when clearing effort", () => {
+  const lines = ["* TODO Task", "  :PROPERTIES:", "  :ID: abc", "  :Effort: 20", "  :END:"];
+  const task = mkTask({ raw: lines[0], state: "TODO", title: "Task" });
+  applyTaskPatch(lines, 0, task, { effort: null });
+  assert.deepEqual(lines, ["* TODO Task", "  :PROPERTIES:", "  :ID: abc", "  :END:"]);
+});
+
 test("applyRepeaterChange sets and clears repeaters", () => {
   const lines = ["* TODO Task", "  SCHEDULED: <2026-09-20 Sun>"];
   const task = mkTask({ raw: lines[0], state: "TODO", title: "Task" });
@@ -440,6 +492,19 @@ test("buildAppendBlock formats headline, planning and notes", () => {
     "  SCHEDULED: <2026-09-22 Tue 09:30>",
     "  ask about",
     "  lead times",
+  ]);
+});
+
+test("buildAppendBlock writes the effort property", () => {
+  const block = buildAppendBlock(
+    { title: "Write report", state: "TODO", tags: [], effort: 90 },
+    1,
+  );
+  assert.deepEqual(block, [
+    "* TODO Write report",
+    "  :PROPERTIES:",
+    "  :Effort: 1:30",
+    "  :END:",
   ]);
 });
 
@@ -543,6 +608,28 @@ test("parseQuickAdd: p4 means no priority", () => {
   assert.equal(ymdh(p.scheduled), "2026-09-21 00:00");
 });
 
+test("parseQuickAdd: e<duration> sets effort", () => {
+  const a = parseQuickAdd("write report e30 #work", REF);
+  assert.equal(a.title, "write report");
+  assert.equal(a.effort, 30);
+  assert.deepEqual(a.tags, ["work"]);
+
+  assert.equal(parseQuickAdd("review e1:30", REF).effort, 90);
+  assert.equal(parseQuickAdd("review e1h30min", REF).effort, 90);
+  assert.equal(parseQuickAdd("review e2d", REF).effort, 2880);
+});
+
+test("parseQuickAdd leaves non-effort e-words in the title", () => {
+  const p = parseQuickAdd("email bob about e2e", REF);
+  assert.equal(p.title, "email bob about e2e");
+  assert.equal(p.effort, undefined);
+});
+
+test("describeParsed includes effort", () => {
+  const summary = describeParsed(parseQuickAdd("write report e1:30", REF));
+  assert.ok(summary.includes("effort 1:30"), summary);
+});
+
 test("parseQuickAdd ignores month and time mentions in titles", () => {
   const p = parseQuickAdd("march the boxes", REF);
   assert.equal(p.title, "march the boxes");
@@ -631,6 +718,21 @@ test("taskMatches handles the basic token grammar", () => {
   assert.ok(taskMatches(t, [], CTX));
 });
 
+test("taskMatches matches tags by prefix", () => {
+  const t = mkTask({
+    raw: "* TODO X",
+    state: "TODO",
+    title: "X",
+    tags: ["work", "workshop", "network"],
+  });
+  assert.ok(taskMatches(t, ["#work"], CTX));
+  assert.ok(taskMatches(t, ["#wo"], CTX));
+  assert.ok(taskMatches(t, ["tag:work"], CTX));
+  assert.ok(taskMatches(t, ["#net"], CTX));
+  assert.equal(taskMatches(t, ["#ork"], CTX), false); // substring is not a prefix
+  assert.equal(taskMatches(t, ["!#wo"], CTX), false);
+});
+
 test("taskMatches negates any token with !", () => {
   const t = mkTask({ raw: "* TODO Pay rent", state: "TODO", title: "Pay rent", tags: ["money"], priority: "A" });
   assert.ok(taskMatches(t, ["!#devops"], CTX));
@@ -672,6 +774,7 @@ test("taskMatches understands is:/has: feature predicates", () => {
     body: "notes here",
     checkboxItems: [{ line: 0, checked: false, text: "x" }],
     orgId: "abc",
+    effort: "1:30",
   });
   for (const q of [
     "is:repeating",
@@ -685,6 +788,7 @@ test("taskMatches understands is:/has: feature predicates", () => {
     "has:notes",
     "has:checkboxes",
     "has:id",
+    "has:effort",
   ]) {
     assert.ok(taskMatches(t, [q], CTX), q);
   }

@@ -13,6 +13,8 @@ export interface Preferences {
   todoKeywords?: string;
   editorCommand?: string;
   archiveFile?: string;
+  clockViaEmacs?: boolean | string;
+  emacsclientCommand?: string;
 }
 
 export interface Config {
@@ -24,11 +26,16 @@ export interface Config {
   editorCommand: string;
   /** Where "Archive Task" moves subtrees */
   archiveFile: string;
+  /** Clock in/out through a running Emacs server (emacsclient) when possible */
+  clockViaEmacs: boolean;
+  /** Command used to reach Emacs; may include extra arguments */
+  emacsclientCommand: string;
 }
 
 const DEFAULT_KEYWORDS = "TODO NEXT WAIT | DONE CANCELLED";
 const DEFAULT_EDITOR = 'emacsclient -c -n -a "" +{line} {file}';
 const DEFAULT_ARCHIVE = "~/org/archive.org";
+const DEFAULT_EMACSCLIENT = "emacsclient";
 
 export function resolvePath(p: string): string {
   if (p === "~") return homedir();
@@ -50,5 +57,8 @@ export function getConfig(): Config {
     keywords: parseKeywords(p.todoKeywords?.trim() || DEFAULT_KEYWORDS),
     editorCommand: p.editorCommand?.trim() || DEFAULT_EDITOR,
     archiveFile: resolvePath(p.archiveFile?.trim() || DEFAULT_ARCHIVE),
+    // Checkbox preferences may arrive as real booleans or as strings.
+    clockViaEmacs: p.clockViaEmacs !== false && p.clockViaEmacs !== "false",
+    emacsclientCommand: p.emacsclientCommand?.trim() || DEFAULT_EMACSCLIENT,
   };
 }

@@ -23,7 +23,6 @@ import {
   restoreTask,
   setTaskRepeater,
   setTaskState,
-  toggleTaskCheckbox,
   unarchiveTask,
   updateTask,
 } from "../src/lib/files";
@@ -193,28 +192,6 @@ test("clock in and out writes org-format CLOCK entries", async () => {
   assert.equal(closed.clockIn, undefined);
   assert.equal(closed.clockedMinutes, 90);
   assert.match(await readFile(file, "utf8"), /CLOCK: \[2026-09-21 Mon 22:00\]--\[2026-09-21 Mon 23:30\] =>  1:30/);
-  await rm(dir, { recursive: true, force: true });
-});
-
-test("checkbox toggle flips the item and refreshes the cookie", async () => {
-  const dir = await scratch();
-  const file = await writeOrg(
-    dir,
-    "todos.org",
-    "* TODO Pack [1/3]\n- [x] books\n- [ ] shoes\n- [ ] charger\n",
-  );
-  const [task] = await load(file);
-
-  await toggleTaskCheckbox(task, 1); // "shoes"
-  const text = await readFile(file, "utf8");
-  assert.match(text, /\* TODO Pack \[2\/3\]/);
-  assert.match(text, /- \[x\] shoes/);
-
-  const [again] = await load(file);
-  await toggleTaskCheckbox(again, 1);
-  const reverted = await readFile(file, "utf8");
-  assert.match(reverted, /\* TODO Pack \[1\/3\]/);
-  assert.match(reverted, /- \[ \] shoes/);
   await rm(dir, { recursive: true, force: true });
 });
 

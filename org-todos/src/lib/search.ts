@@ -123,6 +123,8 @@ function featurePredicate(t: Task, value: string): boolean | undefined {
     case "id":
     case "orgid":
       return !!t.orgId;
+    case "effort":
+      return !!t.effort;
     default:
       return undefined;
   }
@@ -183,7 +185,7 @@ function tokenMatches(t: Task, tok: Token, ctx: MatchContext): boolean {
   let hit: boolean;
   switch (tok.kind) {
     case "tag":
-      hit = t.tags.some((x) => x.toLowerCase() === tok.value);
+      hit = t.tags.some((x) => x.toLowerCase().startsWith(tok.value));
       break;
     case "priority":
       hit = String(priorityLevel(t.priority)) === tok.value;
@@ -218,7 +220,7 @@ function tokenMatches(t: Task, tok: Token, ctx: MatchContext): boolean {
 /**
  * Search grammar (tokens are whitespace-separated; `"quoted phrases"` work):
  *
- *   `#work` / `tag:work`        tag present
+ *   `#work` / `tag:work`        tag starts with the text (prefix)
  *   `p1`…`p4` / `priority:1`    priority level (4 = none)
  *   `state:WAIT`                exact state
  *   `project:home`              any parent headline contains the text
@@ -284,7 +286,7 @@ Prefix any token with \`!\` to **exclude** matches.
 
 | Token | Matches |
 | --- | --- |
-| \`#work\` or \`tag:work\` | tasks tagged \`work\` |
+| \`#work\` or \`tag:work\` | tags starting with \`work\` |
 | \`!#devops\` | tasks **without** the \`devops\` tag |
 | \`p1\`…\`p4\` / \`priority:2\` | priority level (4 = none) |
 | \`state:WAIT\` | exact TODO state |
@@ -293,7 +295,7 @@ Prefix any token with \`!\` to **exclude** matches.
 | \`is:open\` / \`is:done\` / \`is:overdue\` | status |
 | \`is:repeating\` / \`has:repeat\` | has a repeater |
 | \`has:clock\` / \`has:deadline\` / \`has:scheduled\` | planning/clock features |
-| \`has:tags\` / \`has:notes\` / \`has:checkboxes\` / \`has:id\` | body/property features |
+| \`has:tags\` / \`has:notes\` / \`has:checkboxes\` / \`has:id\` / \`has:effort\` | body/property features |
 | \`due:overdue\` \`due:today\` \`due:tomorrow\` \`due:week\` \`due:future\` \`due:none\` | deadline bucket |
 | \`scheduled:today\` … | scheduled bucket |
 | \`"pay rent"\` | free text phrase in title/state/tags/outline |

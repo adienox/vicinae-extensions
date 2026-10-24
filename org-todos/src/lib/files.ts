@@ -23,7 +23,6 @@ import {
   parseOrg,
   parseStamp,
   setProperty,
-  updateCookie,
   ymd,
   adjustSubtreeLevel,
   applyRepeaterChange,
@@ -329,39 +328,6 @@ export async function setTaskRepeater(
 ): Promise<void> {
   await editFile(task, (lines, idx) => {
     applyRepeaterChange(lines, idx, task, target, repeater);
-  });
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Checkboxes                                                                */
-/* -------------------------------------------------------------------------- */
-
-/** Toggle the bodyLine-th checkbox (body-relative index) and refresh the cookie. */
-export async function toggleTaskCheckbox(
-  task: Task,
-  bodyLine: number,
-): Promise<{ done: number; total: number }> {
-  return editFile(task, (lines, idx) => {
-    const start = bodyStart(lines, idx);
-    const at = start + bodyLine;
-    const line = lines[at] ?? "";
-    const m = /^(\s*[-+] \[)([ xX-])(\].*)$/.exec(line);
-    if (!m) throw new Error("Checkbox not found (file changed?)");
-    lines[at] = `${m[1]}${m[2] === " " ? "x" : " "}${m[3]}`;
-
-    let end = start;
-    while (end < lines.length && !HEADLINE_RE.test(lines[end])) end++;
-    let done = 0;
-    let total = 0;
-    for (let i = start; i < end; i++) {
-      const cb = /^\s*[-+] \[([ xX-])\]/.exec(lines[i]);
-      if (cb) {
-        total++;
-        if (cb[1] !== " ") done++;
-      }
-    }
-    if (total) lines[idx] = updateCookie(lines[idx], done, total);
-    return { done, total };
   });
 }
 

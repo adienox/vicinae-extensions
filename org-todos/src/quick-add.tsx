@@ -22,6 +22,7 @@ export default async function QuickAdd(props: LaunchProps<{ arguments: Arguments
       tags: p.tags,
       scheduled: p.scheduled,
       deadline: p.deadline,
+      effort: p.effort,
     });
     await showToast({
       style: Toast.Style.Success,

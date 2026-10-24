@@ -18,6 +18,12 @@ type ExtensionPreferences = {
 	/** Archive File - Where 'Archive Task' moves subtrees (~ is expanded). Created if missing. */
 	"archiveFile": string;
 
+	/** Clocking - Run org-clock-in/org-clock-out in a running Emacs server (via emacsclient) so Emacs' clock stays authoritative. Falls back to editing the file directly when no server is reachable. */
+	"clockViaEmacs": boolean;
+
+	/** Emacs Client - Command used to reach Emacs. Extra arguments are allowed, e.g. 'emacsclient -s /run/user/1000/emacs/server'. */
+	"emacsclientCommand": string;
+
 	/** Editor Command - Shell command used by 'Open in Editor'. {file} and {line} are substituted. */
 	"editorCommand": string;
 }
@@ -27,11 +33,6 @@ declare type Preferences = ExtensionPreferences
 declare namespace Preferences {
   /** Command: Todos */
 	export type ListTasks = ExtensionPreferences & {
-		
-	}
-
-	/** Command: Agenda */
-	export type Agenda = ExtensionPreferences & {
 		
 	}
 
@@ -54,11 +55,6 @@ declare namespace Preferences {
 declare namespace Arguments {
   /** Command: Todos */
 	export type ListTasks = {
-		
-	}
-
-	/** Command: Agenda */
-	export type Agenda = {
 		
 	}
 

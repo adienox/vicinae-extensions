@@ -29,6 +29,7 @@ export default async function Capture(props: LaunchProps) {
       tags: p.tags,
       scheduled: p.scheduled,
       deadline: p.deadline,
+      effort: p.effort,
       notes: notes || undefined,
     });
     await showToast({

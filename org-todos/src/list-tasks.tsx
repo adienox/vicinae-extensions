@@ -11,26 +11,24 @@ import {
 } from "@vicinae/api";
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { DateForm, EditForm } from "./components/edit-form";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { DateForm, EditForm, EffortForm } from "./components/edit-form";
 import { RefilePicker } from "./components/refile";
 import TaskForm from "./components/task-form";
-import { LEVEL_COLOR, detailMarkdown, shortDay, stampLabel, taskActionSections, type TaskHandlers } from "./components/task-actions";
+import { LEVEL_COLOR, clockElapsed, detailMarkdown, shortDay, stampLabel, taskActionSections, type TaskHandlers } from "./components/task-actions";
 import {
   appendTask,
   archiveTask,
-  clockIn,
-  clockOut,
   createFile,
   deleteTask,
   removeSubtreeByRaw,
   restoreTask,
   setTaskRepeater,
   setTaskState,
-  toggleTaskCheckbox,
   updateTask,
 } from "./lib/files";
-import { buildEditorCommand, deadlineStatus, parseYmd, replaceState, taskKey, ymd, type Task } from "./lib/org";
+import { clockIn, clockOut } from "./lib/clock";
+import { buildEditorCommand, deadlineStatus, formatEffort, parseEffort, parseYmd, replaceState, taskKey, ymd, type Task } from "./lib/org";
 import { describeParsed, parseQuickAdd } from "./lib/quick-add";
 import {
   hasFreeText,
@@ -163,6 +161,12 @@ export default function ListTasks() {
   const [grouping, setGrouping] = useRemembered<Grouping>("grouping", isGrouping, "priority");
   const [showDetail, setShowDetail] = useRemembered<boolean>("showDetail", isBool, false);
   const [searchText, setSearchText] = useState("");
+  // Ticks so a running "clocked in · H:MM" tag stays current.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const fail = (title: string, e: unknown) =>
     showToast({ style: Toast.Style.Failure, title, message: String(e) });
@@ -246,6 +250,25 @@ export default function ListTasks() {
     }
   }
 
+  async function changeEffort(task: Task, minutes: number | null) {
+    const old = task.effort;
+    try {
+      const raw = await updateTask(task, { effort: minutes });
+      pushUndo(minutes === null ? "Undo clear effort" : "Undo effort change", async () => {
+        await updateTask({ ...task, raw }, { effort: old ? parseEffort(old) ?? null : null });
+      });
+      await showToast({
+        style: Toast.Style.Success,
+        title: minutes === null ? "Effort cleared" : `Effort ${formatEffort(minutes)}`,
+        message: task.title,
+      });
+    } catch (e) {
+      await fail("Could not update task", e);
+    } finally {
+      reload(true);
+    }
+  }
+
   async function toggleTag(task: Task, tag: string) {
     const next = task.tags.includes(tag) ? task.tags.filter((t) => t !== tag) : [...task.tags, tag];
     try {
@@ -297,13 +320,13 @@ export default function ListTasks() {
     const open = tasks.find((t) => t.clockIn && taskKey(t) !== taskKey(task));
     if (open) {
       try {
-        await clockOut(open);
+        await clockOut(open, config);
       } catch {
         /* keep going; the new clock still starts */
       }
     }
     try {
-      await clockIn(task);
+      await clockIn(task, config);
       await showToast({ style: Toast.Style.Success, title: "Clock in", message: task.title });
     } catch (e) {
       await fail("Could not clock in", e);
@@ -314,7 +337,7 @@ export default function ListTasks() {
 
   async function clockOutTask(task: Task) {
     try {
-      const res = await clockOut(task);
+      const res = await clockOut(task, config);
       await showToast({
         style: Toast.Style.Success,
         title: res ? `Clocked ${Math.floor(res.minutes / 60)}h ${res.minutes % 60}m` : "Nothing to clock out",
@@ -322,16 +345,6 @@ export default function ListTasks() {
       });
     } catch (e) {
       await fail("Could not clock out", e);
-    } finally {
-      reload(true);
-    }
-  }
-
-  async function toggleCheckbox(task: Task, index: number) {
-    try {
-      await toggleTaskCheckbox(task, index);
-    } catch (e) {
-      await fail("Could not toggle checkbox", e);
     } finally {
       reload(true);
     }
@@ -349,6 +362,7 @@ export default function ListTasks() {
         tags: p.tags,
         scheduled: p.scheduled,
         deadline: p.deadline,
+        effort: p.effort,
       });
       pushUndo("Remove created task", async () => {
         await removeSubtreeByRaw(config.file, placed.raw, placed.line);
@@ -381,6 +395,7 @@ export default function ListTasks() {
         tags: p.tags,
         scheduled: p.scheduled,
         deadline: p.deadline,
+        effort: p.effort,
         notes: lines.slice(1).join("\n").trim() || undefined,
       });
       await reload(true);
@@ -484,6 +499,8 @@ export default function ListTasks() {
     changeState,
     changePriority,
     changeDate,
+    changeEffort,
+    effortTarget: (t) => <EffortForm task={t} onSaved={() => reload(true)} registerUndo={pushUndo} />,
     editTarget: (t) => <EditForm task={t} onSaved={() => reload(true)} registerUndo={pushUndo} />,
     refileTarget: (t) => <RefilePicker task={t} onDone={() => reload(true)} registerUndo={pushUndo} />,
     dateTarget: (t, kind) => (
@@ -495,7 +512,6 @@ export default function ListTasks() {
     toggleTag,
     clockIn: clockInTask,
     clockOut: clockOutTask,
-    toggleCheckbox,
   };
 
   function renderItem(task: Task) {
@@ -507,16 +523,26 @@ export default function ListTasks() {
 
     const accessories: List.Item.Accessory[] = [];
     if (!showDetail) {
+      if (task.clockIn) {
+        accessories.push({
+          tag: { value: `clocked in · ${clockElapsed(task.clockIn, now)}`, color: Color.Green },
+          tooltip: `Clocked in at ${task.clockIn}`,
+        });
+      }
       if (task.state !== keywords.active[0] && !finished) {
         accessories.push({ tag: { value: task.state, color: Color.Purple } });
       }
       for (const tag of task.tags) accessories.push({ tag });
       if (boxes && boxes.length) {
         const d = boxes.filter((b) => b.checked).length;
-        accessories.push({ tag: { value: `${d}/${boxes.length}`, color: Color.SecondaryText }, tooltip: "Checkboxes" });
+        accessories.push({ tag: { value: `${d}/${boxes.length}`, color: Color.SecondaryText }, tooltip: "Subtasks" });
       }
       if (task.repeat) accessories.push({ icon: Icon.Repeat, tooltip: `Repeats ${task.repeat}` });
-      if (task.clockIn) accessories.push({ icon: Icon.Clock, tooltip: `Clocked in at ${task.clockIn}` });
+      if (task.effort) {
+        const mins = parseEffort(task.effort);
+        const label = mins !== undefined ? formatEffort(mins) : task.effort;
+        accessories.push({ icon: Icon.Stopwatch, tag: { value: label, color: Color.SecondaryText }, tooltip: `Effort ${label}` });
+      }
       if (multiFile) {
         accessories.push({
           icon: Icon.BlankDocument,

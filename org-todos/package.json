@@ -18,13 +18,6 @@
       "mode": "view"
     },
     {
-      "name": "agenda",
-      "title": "Agenda",
-      "subtitle": "Org",
-      "description": "Day-by-day agenda across all your org files: overdue, today, this week",
-      "mode": "view"
-    },
-    {
       "name": "add-task",
       "title": "New Todo",
       "subtitle": "Org",
@@ -85,6 +78,23 @@
       "type": "textfield",
       "required": false,
       "default": "~/org/archive.org"
+    },
+    {
+      "name": "clockViaEmacs",
+      "title": "Clocking",
+      "label": "Use Emacs for clock in/out",
+      "description": "Run org-clock-in/org-clock-out in a running Emacs server (via emacsclient) so Emacs' clock stays authoritative. Falls back to editing the file directly when no server is reachable.",
+      "type": "checkbox",
+      "required": false,
+      "default": true
+    },
+    {
+      "name": "emacsclientCommand",
+      "title": "Emacs Client",
+      "description": "Command used to reach Emacs. Extra arguments are allowed, e.g. 'emacsclient -s /run/user/1000/emacs/server'.",
+      "type": "textfield",
+      "required": false,
+      "default": "emacsclient"
     },
     {
       "name": "editorCommand",

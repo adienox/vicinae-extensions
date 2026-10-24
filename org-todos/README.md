@@ -1,7 +1,7 @@
 # Org Todos (Vicinae extension)
 
-Browse, complete, edit and create tasks in Org-mode files — with an agenda,
-refiling, clocking, checkboxes and natural-language dates.
+Browse, complete, edit and create tasks in Org-mode files — with refiling,
+clocking, checkboxes and natural-language dates.
 
 ## Install
 
@@ -13,10 +13,7 @@ npm run build   # installs into ~/.local/share/vicinae/extensions/org-todos
 ## Commands
 
 - **Todos** – the task list.
-- **Agenda** – day-by-day view across all files: Overdue, Today, Tomorrow, the
-  next seven days, Later, and Unscheduled. Tasks closed today trail the Today
-  section.
-- **New Todo** – form with title, state, priority, tags, dates, repeater, notes
+- **New Todo** – form with title, state, priority, tags, dates, repeater, effort, notes
   and target file. The title understands the quick-add syntax below and shows a
   live preview; explicit fields win over the title. `ctrl+enter` creates and
   keeps the form open.
@@ -35,6 +32,7 @@ matches press Enter; `ctrl+enter` creates even when there are matches).
 | --- | --- |
 | `p1` `p2` `p3` (or `!1`…) | priority `[#A]` `[#B]` `[#C]`; `p4` = none |
 | `#tag` | tag |
+| `e30` / `e1:30` / `e1h30min` | `:Effort:` property (30 min / 1 h 30 min) |
 | a date phrase (`tomorrow`, `fri`, `sep 30`, `9/30`, `in 3 days`, `2026-09-30`, …) | `SCHEDULED` |
 | `by …` / `due …` / `deadline …` before a date | `DEADLINE` |
 | `on …` before a date | `SCHEDULED` (anywhere in the sentence) |
@@ -63,7 +61,7 @@ already on the stamp unless you type an explicit time.
 
 ## Morning triage
 
-When tasks have overdue scheduled dates, the Todos list and the Agenda offer
+When tasks have overdue scheduled dates, the Todos list offers
 "Reschedule overdue (N)": push them all to Today, Tomorrow, or Next Monday in
 one undoable batch. Deadlines are deliberately left alone — they are
 commitments, not intentions.
@@ -71,29 +69,36 @@ commitments, not intentions.
 ## Deadline warnings
 
 Org warning periods on deadlines (`DEADLINE: <… -3d>`) are honoured: while a
-deadline is inside its warning window it shows an orange "due in Nd" chip in
-the Agenda, the date turns orange in the Todos list, and the detail view
-explains the warning period.
+deadline is inside its warning window the date turns orange in the Todos list
+and the detail view explains the warning period.
 
-## Task actions (list and agenda)
+## Task actions
 
 - **State** – every configured TODO state is a top-level action in the action
   panel (ctrl+b); Enter marks done / reopens.
 - **Refile…** – move the subtree to another file, as a top-level entry or
   under any project (stars are adjusted). Undoable.
-- **Clock In / Clock Out** – writes org-format `CLOCK:` entries into the
-  task's `:LOGBOOK:`; only one clock runs at a time (clocking in elsewhere
-  clocks the previous task out). Accumulated time shows in the detail view.
-- **Checkboxes** – `- [ ]` items in the body get a toggle submenu and a
-  `x/y` accessory; `[d/t]` and `[d%]` statistics cookies in the headline are
-  updated automatically.
+- **Clock In / Clock Out** – drives a running Emacs server through
+  `emacsclient` so `org-clock` stays authoritative: the task is located by
+  position (falling back to its exact headline) and `org-clock-in` /
+  `org-clock-out` run there, saving the buffer. Only one clock runs at a time
+  (clocking in elsewhere clocks the previous task out). If no Emacs server is
+  reachable, the extension falls back to writing org-format `CLOCK:` entries
+  into the task's `:LOGBOOK:` directly. Accumulated time shows in the detail
+  view.
+- **Subtasks** – `- [ ]` items in the body show an `x/y` accessory. Pressing
+  Enter on such a task opens it in Emacs (where you tick them off); tasks
+  without subtasks keep Enter for mark done / reopen.
 - **Tags** – a submenu built from every tag used in your files; one click
   adds or removes.
 - **Copy Org Link** – copies `[[id:…][title]]` for tasks with a `:ID:`
   property.
 - **Priority, schedule, deadline** – `ctrl+1…4`, submenus with presets and a
   natural-language picker.
-- **Edit Task** – title, state, priority, tags, dates, repeater and the
+- **Effort** – `ctrl+shift+e`, a submenu of presets plus a picker. Stored as
+  the Org `:Effort:` property; accepts minutes (`30`), `H:MM` (`1:30`) and Org
+  durations (`1h 30min`, `2d`). Clearing removes the property.
+- **Edit Task** – title, state, priority, tags, dates, repeater, effort and the
   notes/body.
 - **Archive / Delete** – `ctrl+shift+a` moves the subtree to the archive file
   (with `:ARCHIVE_TIME:`), `ctrl+x` deletes it. Both undoable.
@@ -116,7 +121,7 @@ outline and priority.
 
 | Token | Matches |
 | --- | --- |
-| `#work` or `tag:work` | tasks tagged `work` |
+| `#work` or `tag:work` | tags starting with `work` |
 | `!#devops` | tasks **without** the `devops` tag |
 | `p1`…`p4` / `priority:2` | priority level (4 = none) |
 | `state:WAIT` | exact TODO state |
@@ -125,7 +130,7 @@ outline and priority.
 | `is:open` / `is:done` / `is:overdue` | status |
 | `is:repeating` / `has:repeat` | has a repeater |
 | `has:clock` / `has:deadline` / `has:scheduled` | clock / planning stamps |
-| `has:tags` / `has:notes` / `has:checkboxes` / `has:id` | body / property features |
+| `has:tags` / `has:notes` / `has:checkboxes` / `has:id` / `has:effort` | body / property features |
 | `due:overdue` `due:today` `due:tomorrow` `due:week` `due:future` `due:none` | deadline bucket |
 | `scheduled:today` … | scheduled bucket |
 | `"pay rent"` | free-text phrase |
@@ -139,18 +144,20 @@ task.
 
 | Key | Action |
 | --- | --- |
-| Enter | Mark done / reopen (repeating tasks reschedule instead) |
+| Enter | Tasks with `- [ ]` subtasks: open in Emacs; otherwise mark done / reopen |
+| ctrl+o | Open in editor |
 | ctrl+n | New task |
 | ctrl+e | Edit task |
 | ctrl+1…4 | Set priority 1–4 (4 clears it) |
 | ctrl+s / ctrl+shift+d | Schedule / deadline submenu |
 | ctrl+x | Delete task (subtree) |
 | ctrl+shift+a | Archive task |
+| ctrl+shift+c | Clock in / out (toggle) |
+| ctrl+shift+e | Effort submenu |
 | ctrl+z | Undo |
 | ctrl+g | Cycle grouping: Priority → Date → Project → Flat |
 | ctrl+/ | Search syntax help (Todos) |
 | ctrl+d | Toggle details (Todos) |
-| ctrl+o | Open in editor |
 | ctrl+r | Reload |
 
 Filter and grouping live in the dropdown next to the search bar and are
@@ -163,6 +170,10 @@ remembered between launches.
 - **TODO Keywords** – same format as `#+TODO:`. A `#+TODO:` directive inside
   a file overrides this preference for that file, like Org does.
 - **Archive File** – target for Archive Task (created on first use).
+- **Clocking** – use Emacs (`emacsclient`) for Clock In/Out; uncheck to always
+  edit the file directly.
+- **Emacs Client** – command used to reach Emacs (extra arguments allowed,
+  e.g. `emacsclient -s /run/user/1000/emacs/server`).
 - **Editor Command** – `{file}` and `{line}` are substituted.
 
 ## Development

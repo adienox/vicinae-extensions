@@ -13,7 +13,7 @@
  */
 
 import { en, type ParsedResult } from "chrono-node";
-import { ymd } from "./org";
+import { formatEffort, parseEffort, ymd } from "./org";
 
 export interface Parsed {
   title: string;
@@ -21,6 +21,8 @@ export interface Parsed {
   tags: string[];
   scheduled?: Date;
   deadline?: Date;
+  /** Effort in minutes, from an `e<duration>` token (e30, e1:30, e1h30min) */
+  effort?: number;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -151,6 +153,7 @@ function extractDate(text: string, now: Date): Extract | undefined {
  *
  *  - p1/p2/p3 (or !1/!2/!3) set priority A/B/C, p4 means none
  *  - #tag adds a tag
+ *  - e30 / e1:30 / e1h30min sets the :Effort: property
  *  - a trailing date phrase sets SCHEDULED; "by/due/deadline <date>" sets DEADLINE;
  *    "on <date>" sets SCHEDULED anywhere in the sentence
  */
@@ -167,6 +170,18 @@ export function parseQuickAdd(input: string, now = new Date()): Parsed {
   if (pm) {
     result.priority = ({ 1: "A", 2: "B", 3: "C" } as const)[Number(pm[1]) as 1 | 2 | 3];
     text = text.slice(0, pm.index) + " " + text.slice(pm.index + pm[0].length);
+  }
+
+  // e<duration> sets effort. Skip `e` tokens that don't parse (e.g. "email") and
+  // take the first one that does.
+  const effortRe = /(?<=\s)e(\S+)(?=\s)/gi;
+  let em: RegExpExecArray | null;
+  while ((em = effortRe.exec(text)) !== null) {
+    const minutes = parseEffort(em[1]);
+    if (minutes === undefined) continue;
+    result.effort = minutes;
+    text = text.slice(0, em.index) + " " + text.slice(em.index + em[0].length);
+    break;
   }
 
   text = text.trim();
@@ -219,5 +234,6 @@ export function describeParsed(p: Parsed): string {
   for (const t of p.tags) bits.push(`#${t}`);
   if (p.scheduled) bits.push(`scheduled ${shortDate(p.scheduled)}`);
   if (p.deadline) bits.push(`due ${shortDate(p.deadline)}`);
+  if (p.effort !== undefined) bits.push(`effort ${formatEffort(p.effort)}`);
   return bits.join(" · ");
 }
