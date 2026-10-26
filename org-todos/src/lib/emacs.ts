@@ -46,8 +46,8 @@ export function emacsClockInForm(task: Task): string {
   return (
     "(progn (require 'org) (require 'org-clock)" +
     ` (let ((buf (find-file-noselect ${elispString(task.file)})))` +
-    ` (with-current-buffer buf (save-excursion ${gotoHeadline(task)} (org-clock-in)))` +
-    " (with-current-buffer buf (save-buffer)) t))"
+    ` (with-current-buffer buf (save-excursion ${gotoHeadline(task)} (org-clock-in))` +
+    " (set-visited-file-modtime) (save-buffer)) t))"
   );
 }
 
@@ -63,7 +63,7 @@ export function emacsClockOutForm(): string {
     " (let ((buf (marker-buffer org-clock-marker)) (start org-clock-start-time)" +
     " (org-log-note-clock-out nil))" +
     " (org-clock-out)" +
-    " (when (buffer-live-p buf) (with-current-buffer buf (save-buffer)))" +
+    " (when (buffer-live-p buf) (with-current-buffer buf (set-visited-file-modtime) (save-buffer)))" +
     " (if (and start (numberp (float-time start)))" +
     " (round (/ (float-time (time-subtract (current-time) start)) 60)) 0))" +
     " -1))"
@@ -98,6 +98,47 @@ export function isEmacsUnavailable(err: unknown): boolean {
 /** Clock the task in via Emacs. Throws when Emacs is reachable but fails. */
 export async function emacsClockIn(command: string, task: Task): Promise<void> {
   await runEmacsEval(command, emacsClockInForm(task));
+}
+
+/** Elisp that reverts an unmodified Emacs buffer for `file`, if open. */
+export function emacsRevertForm(file: string): string {
+  return (
+    "(progn (require 'org)" +
+    ` (let ((buf (find-buffer-visiting ${elispString(file)})))` +
+    " (when (and buf (not (buffer-modified-p buf)))" +
+    " (with-current-buffer buf (revert-buffer t t t)))) t)"
+  );
+}
+
+/**
+ * Ask Emacs to revert an unmodified buffer for `file`, so a direct file edit the
+ * extension made doesn't leave Emacs thinking the file changed on disk.
+ */
+export async function emacsRevert(command: string, file: string): Promise<void> {
+  await runEmacsEval(command, emacsRevertForm(file));
+}
+
+/** True when Emacs has an org clock running. */
+export async function emacsClockActive(command: string): Promise<boolean> {
+  const out = await runEmacsEval(
+    command,
+    "(progn (require 'org-clock) (if (org-clock-is-active) \"1\" \"0\"))",
+  );
+  return out.trim().replace(/^"|"$/g, "") === "1";
+}
+
+/**
+ * Save any modified Emacs buffers visiting `files`. Org's `org-clock-out` edits
+ * the buffer but does not save it, so this persists an external clock-out.
+ */
+export async function emacsSaveBuffers(command: string, files: string[]): Promise<void> {
+  if (!files.length) return;
+  const form =
+    "(progn (require 'org) (dolist (f (list " +
+    files.map(elispString).join(" ") +
+    ")) (let ((b (find-buffer-visiting f))) (when (and b (buffer-modified-p b))" +
+    " (with-current-buffer b (set-visited-file-modtime) (save-buffer))))) t)";
+  await runEmacsEval(command, form);
 }
 
 /**

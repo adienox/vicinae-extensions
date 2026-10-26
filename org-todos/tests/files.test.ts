@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -192,6 +192,19 @@ test("clock in and out writes org-format CLOCK entries", async () => {
   assert.equal(closed.clockIn, undefined);
   assert.equal(closed.clockedMinutes, 90);
   assert.match(await readFile(file, "utf8"), /CLOCK: \[2026-09-21 Mon 22:00\]--\[2026-09-21 Mon 23:30\] =>  1:30/);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("clock out with no open clock leaves the file untouched", async () => {
+  const dir = await scratch();
+  const file = await writeOrg(dir, "todos.org", "* TODO Task\n  body\n");
+  const [task] = await load(file);
+
+  const before = await stat(file);
+  const res = await clockOut(task);
+  assert.equal(res, undefined);
+  const after = await stat(file);
+  assert.equal(after.ino, before.ino); // not rewritten
   await rm(dir, { recursive: true, force: true });
 });
 

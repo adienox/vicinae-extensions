@@ -158,7 +158,7 @@ export default function ListTasks() {
   const keywords = config.keywords;
 
   const [filter, setFilter, ready] = useRemembered<Filter>("filter", isFilter, "open");
-  const [grouping, setGrouping] = useRemembered<Grouping>("grouping", isGrouping, "priority");
+  const [grouping, setGrouping] = useRemembered<Grouping>("grouping", isGrouping, "date");
   const [showDetail, setShowDetail] = useRemembered<boolean>("showDetail", isBool, false);
   const [searchText, setSearchText] = useState("");
   // Ticks so a running "clocked in · H:MM" tag stays current.
@@ -596,7 +596,7 @@ export default function ListTasks() {
             : { source: Icon.Circle, tintColor: LEVEL_COLOR[level] }
         }
         accessories={accessories}
-        detail={<List.Item.Detail markdown={detailMarkdown(task, keywords, today, multiFile, (f) => path.basename(f))} />}
+        detail={showDetail ? <List.Item.Detail markdown={detailMarkdown(task, keywords, today, multiFile, (f) => path.basename(f))} /> : undefined}
         actions={
           <ActionPanel>
             {taskActionSections(task, handlers)}

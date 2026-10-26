@@ -7,9 +7,19 @@
  */
 
 import type { Config } from "./config";
-import { emacsClockIn, emacsClockOut, isEmacsUnavailable } from "./emacs";
+import { emacsClockIn, emacsClockOut, emacsRevert, isEmacsUnavailable } from "./emacs";
 import { clockIn as clockInFile, clockOut as clockOutFile } from "./files";
 import type { Task } from "./org";
+
+/** After a direct file edit, keep an open Emacs buffer in sync (best effort). */
+async function resyncEmacs(config: Config, file: string): Promise<void> {
+  if (!config.clockViaEmacs) return;
+  try {
+    await emacsRevert(config.emacsclientCommand, file);
+  } catch {
+    /* Emacs unreachable, or its buffer is modified — leave it alone */
+  }
+}
 
 export async function clockIn(task: Task, config: Config): Promise<void> {
   if (config.clockViaEmacs) {
@@ -21,6 +31,7 @@ export async function clockIn(task: Task, config: Config): Promise<void> {
     }
   }
   await clockInFile(task);
+  await resyncEmacs(config, task.file);
 }
 
 export async function clockOut(
@@ -38,5 +49,7 @@ export async function clockOut(
     // earlier direct-edit fallback may still be open on disk, so try closing
     // that before giving up.
   }
-  return clockOutFile(task);
+  const res = await clockOutFile(task);
+  await resyncEmacs(config, task.file);
+  return res;
 }

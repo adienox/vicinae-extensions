@@ -38,6 +38,13 @@ import {
 /* -------------------------------------------------------------------------- */
 
 async function writeFileAtomic(file: string, content: string): Promise<void> {
+  // Never rewrite an identical file: a no-op write bumps mtime/inode and makes
+  // Emacs think the file changed on disk ("save anyway?" on its next save).
+  try {
+    if ((await readFile(file, "utf8")) === content) return;
+  } catch {
+    /* file may not exist yet */
+  }
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.tmp-${process.pid}`);
   try {
     await writeFile(tmp, content, "utf8");
@@ -240,18 +247,15 @@ export async function sourceExistKey(files: string[]): Promise<string> {
 
 /** Watch the directories containing the files; calls back (debounced) on change. */
 export function watchTasks(files: string[], onChange: () => void): () => void {
-  const dirs = new Map<string, Set<string>>();
-  for (const f of files) {
-    const d = path.dirname(f);
-    if (!dirs.has(d)) dirs.set(d, new Set());
-    dirs.get(d)!.add(path.basename(f));
-  }
+  const dirs = new Set<string>();
+  for (const f of files) dirs.add(path.dirname(f));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const watchers: FSWatcher[] = [];
-  for (const [dir, names] of dirs) {
+  for (const dir of dirs) {
     try {
-      const w = watch(dir, (_event, name) => {
-        if (name && !names.has(name.toString())) return;
+      const w = watch(dir, () => {
+        // Don't filter by name: Emacs may save via a temp/backup rename whose
+        // event name isn't the file's basename. The reload is debounced and cheap.
         clearTimeout(timer);
         timer = setTimeout(onChange, 250);
       });

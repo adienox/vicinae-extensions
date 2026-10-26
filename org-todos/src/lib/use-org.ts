@@ -5,8 +5,9 @@
 
 import { LocalStorage, Toast, showToast } from "@vicinae/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getConfig } from "./config";
+import { getConfig, type Config } from "./config";
 import {
+  clockOut as clockOutFile,
   expandSources,
   fileExists,
   loadTasksAndTags,
@@ -15,9 +16,22 @@ import {
   updateTask,
   watchTasks,
 } from "./files";
+import { emacsClockActive, emacsSaveBuffers } from "./emacs";
 import { parseYmd, ymd, type Task } from "./org";
 
 const UNDO_DEPTH = 10;
+
+/** Persisted snapshot of the last successful load, for an instant first paint. */
+const CACHE_KEY = "orgTodos:cache:v1";
+interface CachedData {
+  key: string;
+  tasks: Task[];
+  tags: string[];
+  files: string[];
+}
+/** Cache is invalidated when the configured sources or keywords change. */
+const cacheKeyFor = (config: Config) =>
+  JSON.stringify({ sources: config.sources, keywords: config.keywords });
 
 export function useOrgData() {
   const config = useMemo(getConfig, []);
@@ -32,6 +46,7 @@ export function useOrgData() {
   const [undoLabel, setUndoLabel] = useState<string>();
 
   const existKeyRef = useRef("");
+  const cacheRef = useRef<string | undefined>(undefined);
   const undoStack = useRef<{ label: string; revert: () => Promise<void> }[]>([]);
 
   const reload = useCallback(
@@ -40,9 +55,45 @@ export function useOrgData() {
       try {
         const expanded = await expandSources(config.sources);
         setFiles((prev) => (prev.join("\n") === expanded.join("\n") ? prev : expanded));
-        const data = await loadTasksAndTags(expanded, config.keywords);
-        setTasks(data.tasks);
-        setTags(data.tags);
+        let data = await loadTasksAndTags(expanded, config.keywords);
+        // Emacs is the clock authority: `org-clock-out` edits the buffer but
+        // does not save it, so a file-visible open clock can be stale.
+        if (config.clockViaEmacs && data.tasks.some((t) => t.clockIn)) {
+          const active = await emacsClockActive(config.emacsclientCommand).catch(() => true);
+          if (!active) {
+            const filesWithClock = [
+              ...new Set(data.tasks.filter((t) => t.clockIn).map((t) => t.file)),
+            ];
+            // Persist Emacs's real clock-out first (avoids a save conflict).
+            await emacsSaveBuffers(config.emacsclientCommand, filesWithClock).catch(() => {});
+            let reread = await loadTasksAndTags(expanded, config.keywords);
+            // No Emacs buffer for the file: close the stale clock ourselves.
+            const stale = reread.tasks.filter((t) => t.clockIn);
+            for (const t of stale) {
+              try {
+                await clockOutFile(t);
+              } catch {
+                /* ignore */
+              }
+            }
+            if (stale.length) reread = await loadTasksAndTags(expanded, config.keywords);
+            data = reread;
+          }
+        }
+        const payload = JSON.stringify({
+          key: cacheKeyFor(config),
+          tasks: data.tasks,
+          tags: data.tags,
+          files: expanded,
+        } satisfies CachedData);
+        // Skip the state update (and its list re-render) when the disk data is
+        // identical to what we already rendered from cache.
+        if (payload !== cacheRef.current) {
+          cacheRef.current = payload;
+          setTasks(data.tasks);
+          setTags(data.tags);
+          void LocalStorage.setItem(CACHE_KEY, payload).catch(() => {});
+        }
         setError(undefined);
         setPrimaryExists(await fileExists(config.file));
 
@@ -62,11 +113,46 @@ export function useOrgData() {
     [config.sources, config.keywords, config.file],
   );
 
+  // Show the cached list immediately, then revalidate from disk in the
+  // background (and keep watching for real-time changes below).
   useEffect(() => {
-    reload();
-  }, [reload]);
+    let cancelled = false;
+    (async () => {
+      const raw = await LocalStorage.getItem<string>(CACHE_KEY).catch(() => undefined);
+      let hydrated = false;
+      if (raw) {
+        try {
+          const cached = JSON.parse(raw) as CachedData;
+          if (cached?.key === cacheKeyFor(config) && Array.isArray(cached.tasks)) {
+            if (cancelled) return;
+            setTasks(cached.tasks);
+            setTags(cached.tags ?? []);
+            if (Array.isArray(cached.files) && cached.files.length) setFiles(cached.files);
+            cacheRef.current = raw;
+            setLoading(false);
+            hydrated = true;
+          }
+        } catch {
+          /* ignore a corrupt cache */
+        }
+      }
+      if (!cancelled) await reload(hydrated);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reload, config]);
 
   useEffect(() => watchTasks(files, () => reload(true)), [files, watchEpoch, reload]);
+
+  // While a clock is shown, re-check Emacs periodically: an external clock-out
+  // may not touch the file at all (Emacs does not save on `org-clock-out`).
+  const hasClock = tasks.some((t) => t.clockIn);
+  useEffect(() => {
+    if (!hasClock || !config.clockViaEmacs) return;
+    const id = setInterval(() => reload(true), 5000);
+    return () => clearInterval(id);
+  }, [hasClock, config.clockViaEmacs, reload]);
 
   function pushUndo(label: string, revert: () => Promise<void>) {
     const stack = undoStack.current;
